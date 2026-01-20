@@ -1,69 +1,49 @@
 import streamlit as st
 from dataclasses import dataclass
-from typing import List, Dict
-import random
+from typing import List, Dict, Optional
+import textwrap
 
+# -----------------------------
+# Page config
+# -----------------------------
 st.set_page_config(
-    page_title="MBTI 진로 추천",
-    page_icon="🧭",
+    page_title="Shoulder Exam Helper",
+    page_icon="🦴",
     layout="wide",
 )
 
 # -----------------------------
-# 🎨 Minimal White/Blue UI
+# Minimal white/blue CSS
 # -----------------------------
-CUSTOM_CSS = """
+CSS = """
 <style>
-/* 전체 배경: 화이트 */
-.stApp {
-  background: #F7FAFF;
-  color: #0B1B3A;
-}
-
-/* 공통 폰트 */
+.stApp { background:#F7FAFF; color:#0B1B3A; }
 html, body, [class*="css"]  {
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
 }
-
-/* 상단 헤더 */
 .header {
   background: linear-gradient(90deg, #0B63F6 0%, #2EA8FF 100%);
-  padding: 18px 20px;
+  padding: 16px 18px;
   border-radius: 14px;
   color: white;
   box-shadow: 0 10px 26px rgba(11,99,246,0.18);
 }
-.header h1{
-  margin:0;
-  font-size: 28px;
-  font-weight: 900;
-  letter-spacing: -0.3px;
-}
-.header p{
-  margin:6px 0 0 0;
-  font-size: 14px;
-  opacity: 0.92;
-}
-
-/* 카드 (심플) */
+.header h1{ margin:0; font-size: 24px; font-weight: 900; letter-spacing:-0.3px; }
+.header p{ margin:6px 0 0 0; font-size: 13px; opacity:0.92; line-height:1.35; }
 .card {
   background: #FFFFFF;
   border: 1px solid rgba(11, 99, 246, 0.12);
   border-radius: 14px;
-  padding: 16px 16px 12px 16px;
+  padding: 14px 14px 10px 14px;
   box-shadow: 0 8px 22px rgba(17, 34, 68, 0.06);
 }
 .card + .card { margin-top: 12px; }
-
-/* 섹션 타이틀 */
 .section-title{
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 900;
   color: #083A99;
   margin: 0 0 10px 0;
 }
-
-/* 뱃지 */
 .badge {
   display:inline-block;
   padding: 6px 10px;
@@ -76,339 +56,500 @@ html, body, [class*="css"]  {
   font-size: 13px;
   font-weight: 700;
 }
-
-/* 버튼 */
+.hr { height: 1px; background: rgba(11, 99, 246, 0.12); margin: 12px 0; }
+.note { color: rgba(11, 27, 58, 0.72); font-size: 13px; line-height: 1.5; }
+.small { color: rgba(11, 27, 58, 0.72); font-size: 12.5px; line-height: 1.5; }
 div.stButton > button {
-  background: #0B63F6;
-  color: white;
-  font-weight: 900;
+  background: #0B63F6; color: white; font-weight: 900;
   border: 1px solid rgba(11, 99, 246, 0.35);
-  border-radius: 12px;
-  padding: 0.75rem 1.1rem;
+  border-radius: 12px; padding: 0.7rem 1.0rem;
   box-shadow: 0 10px 22px rgba(11,99,246,0.18);
 }
-div.stButton > button:hover {
-  background: #0957D8;
-}
-
-/* selectbox, multiselect */
+div.stButton > button:hover { background:#0957D8; }
 [data-baseweb="select"] > div {
-  background: #FFFFFF !important;
-  border-radius: 12px !important;
+  background:#FFFFFF !important;
+  border-radius:12px !important;
   border: 1px solid rgba(11, 99, 246, 0.18) !important;
-}
-
-/* 작은 안내문 */
-.note {
-  color: rgba(11, 27, 58, 0.72);
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-/* 구분선 */
-.hr {
-  height: 1px;
-  background: rgba(11, 99, 246, 0.12);
-  margin: 12px 0;
 }
 </style>
 """
-st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.markdown(CSS, unsafe_allow_html=True)
 
 # -----------------------------
-# 🧩 Data Model
+# Models
 # -----------------------------
 @dataclass
-class CareerPack:
-    summary: str                 # 간결 리포트
-    strengths: List[str]
-    careers: List[str]
-    environments: List[str]
-    study_tips: List[str]
-    famous_people: List[str]     # MBTI별 유명인 (예시)
-    keywords: List[str]
+class PhysicalTest:
+    name: str
+    target: str
+    how: str
+    positive: str
+    caution: Optional[str] = None
+
+@dataclass
+class Exercise:
+    name: str
+    goal: str
+    steps: List[str]
+    dosage: str
+    svg: str
+    cautions: Optional[str] = None
 
 def chips(items: List[str]) -> str:
     return "".join([f"<span class='badge'>{x}</span>" for x in items])
 
+def wrap_md(s: str) -> str:
+    return "\n".join(textwrap.wrap(s, width=88))
+
 # -----------------------------
-# 🧠 MBTI Data (간결 버전 + 유명인 추가)
-# ※ 유명인 MBTI는 출처/기준에 따라 논쟁이 있을 수 있어 "대표적으로 언급되는 예시"로 제시
+# Simple SVG library (very basic diagrams)
 # -----------------------------
-MBTI_DATA: Dict[str, CareerPack] = {
-    "INTJ": CareerPack(
-        summary="전략·분석 중심. 복잡한 문제를 구조화하고 장기 로드맵을 설계하는 데 강함.",
-        strengths=["전략", "분석", "최적화", "독립적 사고"],
-        careers=["데이터 사이언티스트", "전략 컨설턴트", "제품 매니저(PM)", "정책/기획 연구원", "보안 분석가"],
-        environments=["자율성 높은 조직", "깊이 있는 프로젝트", "목표·지표가 명확한 팀"],
-        study_tips=["로드맵 먼저", "핵심개념→응용", "성과(포트폴리오)로 증명"],
-        famous_people=["Elon Musk", "Christopher Nolan", "Michelle Obama"],
-        keywords=["전략", "기획", "분석"]
+def svg_card(svg: str, height: int = 180) -> str:
+    return f"""
+    <div style="border:1px solid rgba(11,99,246,0.12); border-radius:12px; background: rgba(11,99,246,0.03); padding:10px;">
+      <div style="max-width:100%; overflow:hidden;">
+        {svg}
+      </div>
+    </div>
+    """
+
+SVG_PENDULUM = """
+<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="520" height="180" rx="12" fill="white"/>
+  <text x="18" y="26" font-size="14" font-weight="700" fill="#083A99">Pendulum (Codman) - 팔 흔들기</text>
+
+  <!-- table -->
+  <rect x="40" y="72" width="190" height="12" rx="6" fill="#0B63F6" opacity="0.25"/>
+
+  <!-- torso leaning -->
+  <circle cx="95" cy="62" r="10" fill="#0B63F6" opacity="0.85"/>
+  <line x1="95" y1="72" x2="120" y2="110" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+  <line x1="120" y1="110" x2="155" y2="120" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- support arm to table -->
+  <line x1="120" y1="110" x2="80" y2="78" stroke="#0B63F6" stroke-width="5" stroke-linecap="round" opacity="0.85"/>
+
+  <!-- hanging arm -->
+  <line x1="155" y1="120" x2="175" y2="150" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="175" cy="150" r="6" fill="#0B63F6" opacity="0.9"/>
+
+  <!-- swing arcs -->
+  <path d="M175 150 C205 140, 220 125, 230 110" fill="none" stroke="#2EA8FF" stroke-width="3" stroke-dasharray="6 6"/>
+  <path d="M175 150 C150 140, 135 125, 125 110" fill="none" stroke="#2EA8FF" stroke-width="3" stroke-dasharray="6 6"/>
+  <text x="255" y="122" font-size="12" fill="#0B1B3A" opacity="0.75">작게 원/좌우로 흔들기</text>
+
+  <!-- notes -->
+  <text x="300" y="150" font-size="12" fill="#0B1B3A" opacity="0.75">통증 범위 내에서</text>
+</svg>
+"""
+
+SVG_SCAP_RETRACT = """
+<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="520" height="180" rx="12" fill="white"/>
+  <text x="18" y="26" font-size="14" font-weight="700" fill="#083A99">Scapular Retraction - 견갑골 모으기</text>
+
+  <!-- person back -->
+  <circle cx="130" cy="60" r="10" fill="#0B63F6" opacity="0.85"/>
+  <line x1="130" y1="70" x2="130" y2="130" stroke="#0B63F6" stroke-width="8" stroke-linecap="round"/>
+  <line x1="110" y1="92" x2="150" y2="92" stroke="#0B63F6" stroke-width="6" stroke-linecap="round" opacity="0.9"/>
+
+  <!-- shoulder blades -->
+  <path d="M115 108 Q130 95 145 108" fill="none" stroke="#2EA8FF" stroke-width="4"/>
+  <path d="M115 118 Q130 105 145 118" fill="none" stroke="#2EA8FF" stroke-width="4"/>
+
+  <!-- arrows inward -->
+  <line x1="85" y1="112" x2="110" y2="112" stroke="#2EA8FF" stroke-width="3"/>
+  <polygon points="110,112 103,108 103,116" fill="#2EA8FF"/>
+  <line x1="175" y1="112" x2="150" y2="112" stroke="#2EA8FF" stroke-width="3"/>
+  <polygon points="150,112 157,108 157,116" fill="#2EA8FF"/>
+
+  <text x="220" y="85" font-size="12" fill="#0B1B3A" opacity="0.75">어깨를 으쓱하지 말고</text>
+  <text x="220" y="105" font-size="12" fill="#0B1B3A" opacity="0.75">날개뼈를 뒤로 ‘모으기’</text>
+</svg>
+"""
+
+SVG_ER_BAND = """
+<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="520" height="180" rx="12" fill="white"/>
+  <text x="18" y="26" font-size="14" font-weight="700" fill="#083A99">External Rotation - 외회전 밴드</text>
+
+  <!-- torso -->
+  <circle cx="120" cy="58" r="10" fill="#0B63F6" opacity="0.85"/>
+  <line x1="120" y1="68" x2="120" y2="132" stroke="#0B63F6" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- arm at 90 elbow -->
+  <line x1="120" y1="92" x2="160" y2="92" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+  <line x1="160" y1="92" x2="160" y2="120" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- towel -->
+  <rect x="118" y="98" width="10" height="18" rx="4" fill="#2EA8FF" opacity="0.5"/>
+  <text x="185" y="98" font-size="12" fill="#0B1B3A" opacity="0.75">팔꿈치 옆에 수건</text>
+
+  <!-- band anchor -->
+  <circle cx="260" cy="92" r="6" fill="#0B63F6" opacity="0.85"/>
+  <line x1="260" y1="92" x2="160" y2="110" stroke="#2EA8FF" stroke-width="4"/>
+  <text x="270" y="95" font-size="12" fill="#0B1B3A" opacity="0.75">밴드 고정</text>
+
+  <!-- rotation arrow -->
+  <path d="M165 122 A30 30 0 0 0 195 112" fill="none" stroke="#2EA8FF" stroke-width="3"/>
+  <polygon points="195,112 188,110 190,117" fill="#2EA8FF"/>
+  <text x="220" y="130" font-size="12" fill="#0B1B3A" opacity="0.75">손을 바깥으로 천천히</text>
+</svg>
+"""
+
+SVG_DOORWAY_STRETCH = """
+<svg width="520" height="180" viewBox="0 0 520 180" xmlns="http://www.w3.org/2000/svg">
+  <rect x="0" y="0" width="520" height="180" rx="12" fill="white"/>
+  <text x="18" y="26" font-size="14" font-weight="700" fill="#083A99">Doorway Stretch - 흉근 스트레칭</text>
+
+  <!-- doorway -->
+  <rect x="300" y="48" width="22" height="110" fill="#0B63F6" opacity="0.25"/>
+  <rect x="420" y="48" width="22" height="110" fill="#0B63F6" opacity="0.25"/>
+  <rect x="300" y="48" width="142" height="18" fill="#0B63F6" opacity="0.25"/>
+
+  <!-- person -->
+  <circle cx="140" cy="68" r="10" fill="#0B63F6" opacity="0.85"/>
+  <line x1="140" y1="78" x2="140" y2="140" stroke="#0B63F6" stroke-width="8" stroke-linecap="round"/>
+  <line x1="140" y1="95" x2="190" y2="80" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+  <line x1="140" y1="95" x2="190" y2="110" stroke="#0B63F6" stroke-width="6" stroke-linecap="round"/>
+
+  <!-- arms to doorway -->
+  <line x1="190" y1="80" x2="300" y2="68" stroke="#2EA8FF" stroke-width="3" stroke-dasharray="6 6"/>
+  <line x1="190" y1="110" x2="300" y2="120" stroke="#2EA8FF" stroke-width="3" stroke-dasharray="6 6"/>
+
+  <!-- forward arrow -->
+  <line x1="165" y1="150" x2="210" y2="150" stroke="#2EA8FF" stroke-width="3"/>
+  <polygon points="210,150 203,146 203,154" fill="#2EA8FF"/>
+  <text x="220" y="154" font-size="12" fill="#0B1B3A" opacity="0.75">가슴을 앞으로</text>
+</svg>
+"""
+
+# -----------------------------
+# Test Library (핵심만 간결하게)
+# -----------------------------
+TESTS: Dict[str, PhysicalTest] = {
+    "Neer": PhysicalTest(
+        name="Neer Impingement",
+        target="견봉하 충돌/회전근개 병변(충돌 기전)",
+        how="견갑을 고정한 뒤, 팔을 내회전 상태로 전방거상(끝범위까지)합니다.",
+        positive="전외측 어깨 통증/불편감 재현(특히 70–120° 부근 또는 끝범위).",
+        caution="급성 통증이 매우 심하면 범위를 줄이거나 중단."
     ),
-    "INTP": CareerPack(
-        summary="원리 탐구형. 개념을 연결하고 가설을 세워 실험하며 답을 찾아가는 스타일.",
-        strengths=["논리", "탐구", "모델링", "문제 해결"],
-        careers=["소프트웨어 엔지니어", "R&D 연구원", "AI/알고리즘 엔지니어", "UX 리서처", "퀀트/리서치"],
-        environments=["실험과 탐색이 허용", "지적 호기심을 존중", "프로젝트 기반"],
-        study_tips=["작게 만들어 검증", "완벽주의 대신 v1", "스터디로 마감 확보"],
-        famous_people=["Albert Einstein", "Bill Gates", "Marie Curie"],
-        keywords=["탐구", "이론", "실험"]
+    "Hawkins": PhysicalTest(
+        name="Hawkins-Kennedy",
+        target="견봉하 충돌",
+        how="어깨 90° 굴곡 + 팔꿈치 90° 굴곡 후, 전완을 내회전시킵니다.",
+        positive="전외측 어깨 통증 재현."
     ),
-    "ENTJ": CareerPack(
-        summary="목표 달성형 리더. 의사결정이 빠르고 실행·조직 운영에 강점.",
-        strengths=["리더십", "결정", "추진", "성과 관리"],
-        careers=["사업개발(BD)", "경영 컨설턴트", "프로덕트 오너", "운영/조직 관리자", "세일즈 리더"],
-        environments=["성과 중심", "역할이 명확", "속도감 있는 조직"],
-        study_tips=["KPI 기반 사례 만들기", "발표·협상 훈련", "케이스 스터디"],
-        famous_people=["Steve Jobs", "Margaret Thatcher", "Gordon Ramsay"],
-        keywords=["리더십", "성과", "비즈니스"]
+    "PainfulArc": PhysicalTest(
+        name="Painful Arc",
+        target="견봉하 충돌/상완골두-견봉 사이 문제",
+        how="팔을 외전(옆으로 올리기)하며 통증 구간을 확인합니다.",
+        positive="대개 60–120° 구간에서 통증 증가 후, 그 이상에서 감소."
     ),
-    "ENTP": CareerPack(
-        summary="아이디어·설득형. 변화와 혁신을 즐기며 토론·기획에 강함.",
-        strengths=["발상", "토론", "설득", "적응"],
-        careers=["창업", "마케팅/브랜딩", "기획자", "정책/커뮤니케이션", "미디어/콘텐츠"],
-        environments=["자유로운 아이디어 문화", "빠른 실험", "다양한 협업"],
-        study_tips=["프로젝트로 학습", "피칭 경험", "마감 관리"],
-        famous_people=["Thomas Edison", "Mark Twain", "Sacha Baron Cohen"],
-        keywords=["혁신", "기획", "설득"]
+    "EmptyCan": PhysicalTest(
+        name="Empty Can (Jobe)",
+        target="극상근(supraspinatus) 관련",
+        how="어깨 90° 외전+30° 전방(Scaption)에서 엄지를 아래(내회전)로 하고 저항을 줍니다.",
+        positive="통증 또는 근력 저하(좌우 비교).",
+        caution="심한 통증이면 Full Can(엄지 위)로 대체 고려."
     ),
-    "INFJ": CareerPack(
-        summary="의미·사람 중심. 통찰과 공감을 바탕으로 장기 성장과 변화를 돕는 타입.",
-        strengths=["통찰", "공감", "가치 지향", "기획력"],
-        careers=["상담/심리", "교육", "HR/조직문화", "에디터/작가", "사회혁신/NGO"],
-        environments=["미션 중심", "깊이 있는 관계", "조용히 몰입 가능한 환경"],
-        study_tips=["기록(저널링)", "코칭/상담 실습", "문제 중심 프로젝트"],
-        famous_people=["Martin Luther King Jr.", "Nelson Mandela", "Mother Teresa"],
-        keywords=["의미", "상담", "교육"]
+    "DropArm": PhysicalTest(
+        name="Drop Arm",
+        target="전층 회전근개 파열(특히 극상근)",
+        how="팔을 외전시킨 뒤 천천히 내리게 합니다.",
+        positive="버티지 못하고 갑자기 떨어짐/심한 통증으로 조절 불가."
     ),
-    "INFP": CareerPack(
-        summary="가치·창의 중심. ‘나다움’을 살리는 표현/콘텐츠/브랜딩에서 강점.",
-        strengths=["창의", "공감", "가치", "스토리텔링"],
-        careers=["콘텐츠 기획/작가", "디자이너", "교육/코칭", "예술 분야", "사회적 기업/NGO"],
-        environments=["자율성 높은 문화", "창작 존중", "성장 중심"],
-        study_tips=["결과물(작품) 축적", "가치-직무 매칭", "작은 루틴 유지"],
-        famous_people=["William Shakespeare", "J.R.R. Tolkien", "Audrey Hepburn"],
-        keywords=["창작", "가치", "표현"]
+    "ERLag": PhysicalTest(
+        name="External Rotation Lag Sign",
+        target="극하근/소원근(후방 회전근개) 파열 가능",
+        how="팔꿈치 90° 굴곡, 어깨 외회전 최대로 위치시킨 후 ‘유지’하도록 합니다.",
+        positive="외회전 유지 못하고 내회전으로 ‘흘러내림’."
     ),
-    "ENFJ": CareerPack(
-        summary="사람을 성장시키는 리더형. 코칭·조직 운영·커뮤니케이션에 강함.",
-        strengths=["소통", "코칭", "팀 빌딩", "리딩"],
-        careers=["교사/강사", "HR/조직개발", "PR/브랜드", "헬스코치", "커뮤니케이터"],
-        environments=["협업이 활발", "피드백 문화", "성장·교육 친화"],
-        study_tips=["퍼실리테이션", "멘토링 경험", "심리/리더십 기초"],
-        famous_people=["Barack Obama", "Oprah Winfrey", "Emma Watson"],
-        keywords=["소통", "코칭", "리더십"]
+    "LiftOff": PhysicalTest(
+        name="Lift-off",
+        target="견갑하근(subscapularis) 기능",
+        how="손등을 허리 뒤에 두고(내회전), 손을 등에서 떼어 올리게 합니다.",
+        positive="손을 떼지 못함/약함/통증."
     ),
-    "ENFP": CareerPack(
-        summary="아이디어·관계형. 사람과 기회를 연결하며 다양한 프로젝트에서 빛남.",
-        strengths=["아이디어", "관계", "동기부여", "적응"],
-        careers=["마케터", "서비스/콘텐츠 기획", "교육/코치", "커뮤니티 매니저", "크리에이터"],
-        environments=["다양성 존중", "프로젝트가 다채로움", "사람 중심 역할"],
-        study_tips=["흥미→스킬로 번역", "대외활동/프로젝트", "재미+마감 설계"],
-        famous_people=["Robin Williams", "Walt Disney", "Will Smith"],
-        keywords=["사람", "기획", "창의"]
+    "BellyPress": PhysicalTest(
+        name="Belly-press",
+        target="견갑하근 대체 검사",
+        how="손바닥을 복부에 대고 팔꿈치를 앞으로 유지한 채 복부를 누릅니다.",
+        positive="팔꿈치가 뒤로 빠지거나(보상), 힘/통증 문제."
     ),
-    "ISTJ": CareerPack(
-        summary="신뢰·정확 중심. 규정과 프로세스를 기반으로 안정적으로 성과를 만든다.",
-        strengths=["꼼꼼", "책임", "프로세스", "꾸준함"],
-        careers=["회계/세무", "리스크관리", "행정/공공", "품질관리(QC)", "PMO/운영"],
-        environments=["규칙과 역할이 명확", "안정적 조직", "숙련이 쌓이는 직무"],
-        study_tips=["체크리스트", "루틴 반복", "자격/실무 포트폴리오"],
-        famous_people=["George Washington", "Angela Merkel", "Natalie Portman"],
-        keywords=["정확", "안정", "운영"]
+    "Speed": PhysicalTest(
+        name="Speed Test",
+        target="상완이두근 장두/SLAP 의심",
+        how="팔을 90° 전방거상, 팔꿈치 신전, 전완 회외 상태에서 아래로 누르는 저항을 버팁니다.",
+        positive="이두구(bicipital groove) 통증."
     ),
-    "ISFJ": CareerPack(
-        summary="배려·지원 중심. 실무 감각이 좋고 돌봄/지원 역할에서 강함.",
-        strengths=["배려", "성실", "협업", "실무"],
-        careers=["보건/간호", "교육/돌봄", "인사/총무", "기록관리", "서비스 운영"],
-        environments=["따뜻한 팀 문화", "안정적 협업", "의미 있는 반복 업무"],
-        study_tips=["현장 실습", "멘토 기반 성장", "꾸준한 루틴"],
-        famous_people=["Beyoncé", "Queen Elizabeth II", "Vin Diesel"],
-        keywords=["돌봄", "지원", "성실"]
+    "Yergason": PhysicalTest(
+        name="Yergason",
+        target="이두근 장두/횡상완인대",
+        how="팔꿈치 90° 굴곡, 전완 회외 + 외회전에 저항을 줍니다.",
+        positive="이두구 통증/불안정 느낌."
     ),
-    "ESTJ": CareerPack(
-        summary="관리·실행 중심. 표준화와 운영을 통해 조직의 성과를 끌어올린다.",
-        strengths=["조직화", "실행", "관리", "리더십"],
-        careers=["운영/관리자", "프로젝트 매니저", "행정", "재무/기획", "리테일 매니저"],
-        environments=["목표 중심", "역할 명확", "운영 권한이 있는 자리"],
-        study_tips=["성과 사례 만들기", "프로세스 문서화", "코칭 스킬 병행"],
-        famous_people=["Henry Ford", "John D. Rockefeller", "Judge Judy"],
-        keywords=["관리", "실행", "조직"]
+    "OBrien": PhysicalTest(
+        name="O'Brien (Active Compression)",
+        target="SLAP/AC joint",
+        how="어깨 90° 굴곡, 10–15° 내전, 엄지 아래로(내회전) 저항 → 엄지 위(외회전)로 반복.",
+        positive="내회전에서 통증↑, 외회전에서 감소(또는 위치에 따른 통증 양상)."
     ),
-    "ESFJ": CareerPack(
-        summary="관계·조율 중심. 팀워크와 커뮤니케이션으로 분위기와 성과를 함께 만든다.",
-        strengths=["소통", "조율", "팀워크", "서비스 마인드"],
-        careers=["HR/채용", "서비스/관광", "코디네이터", "홍보/PR", "교육 운영"],
-        environments=["상호작용이 많은 곳", "팀 기반", "피드백 문화"],
-        study_tips=["대인 커뮤니케이션", "운영 매뉴얼", "심리/리더십 기초"],
-        famous_people=["Taylor Swift", "Jennifer Lopez", "Bill Clinton"],
-        keywords=["관계", "서비스", "조율"]
+    "CrossBody": PhysicalTest(
+        name="Cross-body Adduction",
+        target="AC joint(견봉쇄골관절) 병변",
+        how="팔을 90° 굴곡 후, 몸통 쪽으로 가로질러 내전합니다.",
+        positive="AC joint 부위 국소 통증."
     ),
-    "ISTP": CareerPack(
-        summary="현실 해결형. 실전에서 빠르게 원인을 찾고 효율적으로 고친다.",
-        strengths=["실전", "침착", "효율", "도구 활용"],
-        careers=["엔지니어/정비", "실무형 개발", "보안/포렌식", "테크 아트", "임상 기술직"],
-        environments=["현장 중심", "자율 문제 해결", "빠른 피드백"],
-        study_tips=["실습/프로젝트", "기능 단위 완성", "기록으로 축적"],
-        famous_people=["Clint Eastwood", "Bear Grylls", "Scarlett Johansson"],
-        keywords=["실전", "기술", "효율"]
+    "Apprehension": PhysicalTest(
+        name="Apprehension/Relocation",
+        target="전방 불안정/재발성 탈구",
+        how="어깨 외전+외회전에서 ‘불안/두려움’(Apprehension) 확인, 후방으로 밀어(Relocation) 완화되는지 봅니다.",
+        positive="통증보다 ‘빠질 것 같은 불안감’이 핵심."
     ),
-    "ISFP": CareerPack(
-        summary="감각·몰입형. 미적 감각과 섬세함을 살려 ‘좋은 결과물’을 만든다.",
-        strengths=["감각", "섬세", "유연", "몰입"],
-        careers=["디자이너", "사진/영상", "공예/푸드", "치료/재활(현장형)", "라이프스타일 브랜드"],
-        environments=["감각을 살릴 수 있는 곳", "안정적 몰입", "창작 존중"],
-        study_tips=["포트폴리오 중심", "작은 루틴", "역할 명확한 협업"],
-        famous_people=["Michael Jackson", "Frida Kahlo", "David Beckham"],
-        keywords=["감각", "창작", "몰입"]
+    "Sulcus": PhysicalTest(
+        name="Sulcus Sign",
+        target="하방/다방향 불안정",
+        how="팔을 늘어뜨린 상태에서 아래로 견인하여 견봉 아래 함몰(sulcus) 관찰.",
+        positive="뚜렷한 함몰 + 증상 재현."
     ),
-    "ESTP": CareerPack(
-        summary="스피드·현장형. 즉시 실행과 설득, 위기 대처에서 강점.",
-        strengths=["액션", "설득", "대응", "실행"],
-        careers=["영업/세일즈", "이벤트/프로모션", "현장직(경찰/소방)", "리포터", "트레이너"],
-        environments=["변화 많은 현장", "성과형 보상", "에너지 높은 조직"],
-        study_tips=["현장 경험", "피칭/협상", "짧은 스프린트 학습"],
-        famous_people=["Donald Trump", "Madonna", "Eddie Murphy"],
-        keywords=["현장", "도전", "성과"]
+    "ApleyScratch": PhysicalTest(
+        name="Apley Scratch / ROM",
+        target="가동범위 제한(동결견 등)",
+        how="손을 머리 뒤/등 뒤로 보내는 동작으로 외회전·내회전 기능을 대략 확인합니다.",
+        positive="좌우 차이 크게 감소, 특히 외회전 제한이 두드러짐."
     ),
-    "ESFP": CareerPack(
-        summary="표현·관계형. 분위기와 에너지를 살려 사람 중심 역할에서 두각.",
-        strengths=["표현", "친화", "공감", "즉흥"],
-        careers=["MC/방송", "퍼포머", "마케팅/홍보", "관광/서비스", "체험형 교육/강사"],
-        environments=["사람 많은 곳", "자유로운 분위기", "다양한 업무"],
-        study_tips=["무대/프로젝트 경험", "개인 브랜딩", "빠른 피드백 반영"],
-        famous_people=["Marilyn Monroe", "Elton John", "Jamie Oliver"],
-        keywords=["표현", "사람", "에너지"]
+    "Spurling": PhysicalTest(
+        name="Spurling (Neck Screen)",
+        target="경추성 방사통(신경근)",
+        how="목을 신전+측굴 후 축성 압박으로 방사통 재현 여부 확인.",
+        positive="팔/손으로 뻗치는 방사통 재현.",
+        caution="신경학적 증상(근력저하/감각저하)이 동반되면 정밀평가 권고."
     ),
 }
 
-MBTI_LIST = list(MBTI_DATA.keys())
+# -----------------------------
+# Exercise Library (핵심 운동 + 간단 그림)
+# -----------------------------
+EXERCISES: Dict[str, Exercise] = {
+    "Pendulum": Exercise(
+        name="Pendulum (Codman)",
+        goal="통증 완화 + 관절 부담 최소로 가벼운 가동성 확보",
+        steps=[
+            "건강한 팔로 지지하고 상체를 살짝 숙입니다.",
+            "아픈 팔은 힘을 빼고 아래로 늘어뜨립니다.",
+            "작게 앞/뒤 또는 좌/우로 흔들거나 작은 원을 그립니다."
+        ],
+        dosage="30–60초 × 2–3세트, 하루 1–3회 (통증 범위 내)",
+        svg=SVG_PENDULUM,
+        cautions="통증이 날카롭게 증가하면 범위를 줄이거나 중단."
+    ),
+    "ScapRetraction": Exercise(
+        name="Scapular Retraction",
+        goal="견갑 안정화(자세/견갑 컨트롤)로 충돌·과부하 완화",
+        steps=[
+            "의자에 앉거나 선 자세에서 어깨 힘을 빼고 목을 길게 합니다.",
+            "날개뼈를 ‘뒤로, 아래로’ 가볍게 모읍니다(으쓱 금지).",
+            "2–3초 유지 후 천천히 이완합니다."
+        ],
+        dosage="10–15회 × 2–3세트, 주 4–6일",
+        svg=SVG_SCAP_RETRACT,
+        cautions="승모근 상부로 으쓱하는 보상이 나오면 강도를 낮추세요."
+    ),
+    "ExternalRotation": Exercise(
+        name="External Rotation (Band or Isometric)",
+        goal="회전근개(특히 후방) 강화로 통증·불안정 개선",
+        steps=[
+            "팔꿈치를 옆구리에 붙이고(수건 끼우면 도움) 90° 굴곡합니다.",
+            "밴드를 당겨 손을 바깥으로 천천히 이동합니다.",
+            "끝범위에서 1초 정지 후 천천히 돌아옵니다."
+        ],
+        dosage="8–12회 × 2–3세트, 주 3–5일",
+        svg=SVG_ER_BAND,
+        cautions="통증이 심하면 밴드 대신 ‘가벼운 등척성(밀기/버티기)’로 시작."
+    ),
+    "DoorwayStretch": Exercise(
+        name="Doorway Stretch",
+        goal="흉근/전면 구조 긴장 완화 → 어깨 전방화(말림) 개선 보조",
+        steps=[
+            "문틀에 팔을 걸치고(편한 높이) 한 발 앞으로 나갑니다.",
+            "가슴이 부드럽게 늘어나는 정도까지만 체중을 싣습니다.",
+            "호흡을 유지하며 20–30초 유지합니다."
+        ],
+        dosage="20–30초 × 2–3회, 하루 1–2회",
+        svg=SVG_DOORWAY_STRETCH,
+        cautions="앞쪽 어깨가 찌르는 통증이면 팔 위치를 낮추거나 중단."
+    ),
+}
 
 # -----------------------------
-# 🔧 Recommendation helper
+# Symptom → Suggested tests/exercises mapping
 # -----------------------------
-def pick_recommendations(mbti: str, n: int, include_interests: List[str]) -> List[str]:
-    pack = MBTI_DATA[mbti]
-    base = pack.careers[:]
-
-    # 관심사 기반 간단 가중치 (심플 유지)
-    interest_map = {
-        "IT/개발": ["개발", "엔지니어", "보안", "데이터", "AI"],
-        "디자인/콘텐츠": ["디자이너", "작가", "콘텐츠", "사진", "영상", "브랜딩", "크리에이터", "미디어"],
-        "보건/의료": ["보건", "간호", "의료", "임상", "재활", "헬스"],
-        "마케팅/세일즈": ["마케팅", "홍보", "PR", "세일즈", "영업", "브랜드", "프로모션"],
-        "공공/정책": ["정책", "공공", "행정", "연구원"],
-        "경영/기획": ["기획", "컨설턴트", "PM", "운영", "사업개발", "프로젝트"],
-        "교육/상담": ["교육", "교사", "강사", "상담", "코칭", "HR"],
-        "기술/현장": ["정비", "현장", "기술", "포렌식", "소방", "경찰"],
-    }
-
-    scored = []
-    for job in base:
-        score = 0
-        for it in include_interests:
-            for kw in interest_map.get(it, []):
-                if kw in job:
-                    score += 2
-        scored.append((score, job))
-
-    scored.sort(key=lambda x: (-x[0], x[1]))
-    top = [j for _, j in scored[:n]]
-
-    # 부족하면 채우기
-    if len(top) < n:
-        for j in base:
-            if j not in top:
-                top.append(j)
-            if len(top) == n:
-                break
-    return top[:n]
+SYMPTOMS: Dict[str, Dict] = {
+    "팔을 올릴 때(특히 60–120°) 아픈 ‘통증호(통증구간)’": {
+        "tags": ["견봉하 충돌", "회전근개 과사용"],
+        "tests": ["PainfulArc", "Neer", "Hawkins", "EmptyCan"],
+        "exercises": ["Pendulum", "ScapRetraction", "ExternalRotation", "DoorwayStretch"]
+    },
+    "야간통/누우면 악화(특히 옆으로 눕기 힘듦)": {
+        "tags": ["회전근개 병변", "염증/점액낭"],
+        "tests": ["Neer", "Hawkins", "EmptyCan", "DropArm"],
+        "exercises": ["Pendulum", "ScapRetraction", "ExternalRotation"]
+    },
+    "힘이 빠짐/물건 들기 어렵고 ‘툭’ 떨어질 듯함": {
+        "tags": ["회전근개 파열 가능", "근력저하"],
+        "tests": ["EmptyCan", "DropArm", "ERLag", "LiftOff", "BellyPress"],
+        "exercises": ["Pendulum", "ScapRetraction", "ExternalRotation"]
+    },
+    "앞쪽 어깨 통증 + 팔 들면 앞쪽이 콕콕 / 이두구 통증": {
+        "tags": ["이두근 장두", "SLAP 가능"],
+        "tests": ["Speed", "Yergason", "OBrien"],
+        "exercises": ["ScapRetraction", "ExternalRotation", "DoorwayStretch"]
+    },
+    "어깨 앞쪽이 ‘빠질 것 같은’ 불안감/탈구 병력": {
+        "tags": ["전방/다방향 불안정"],
+        "tests": ["Apprehension", "Sulcus"],
+        "exercises": ["ScapRetraction", "ExternalRotation"]
+    },
+    "어깨가 전반적으로 뻣뻣하고(특히 외회전) 가동범위가 줄어듦": {
+        "tags": ["동결견(유착성 관절낭염) 가능", "가동범위 제한"],
+        "tests": ["ApleyScratch"],
+        "exercises": ["Pendulum", "DoorwayStretch"]
+    },
+    "목/팔로 뻗치는 저림·방사통(손까지 내려감)": {
+        "tags": ["경추성 통증/신경근"],
+        "tests": ["Spurling"],
+        "exercises": ["ScapRetraction", "DoorwayStretch"]  # 목/신경가동 등은 안전상 여기서는 최소화
+    },
+    "견봉쇄골관절(어깨 위/쇄골 끝) 국소 통증": {
+        "tags": ["AC joint"],
+        "tests": ["CrossBody", "OBrien"],
+        "exercises": ["ScapRetraction", "DoorwayStretch"]
+    },
+}
 
 # -----------------------------
-# 🧭 Header
+# Header
 # -----------------------------
 st.markdown(
     """
 <div class="header">
-  <h1>MBTI 진로 추천 🧭</h1>
+  <h1>어깨 통증 이학적 검사 & 운동 도우미 🦴</h1>
+  <p>교육용 요약 도구입니다. 증상 선택 → 관련 이학적 검사(방법/양성 소견) → 기본 운동(간단 그림) 제공</p>
 </div>
 """,
     unsafe_allow_html=True
 )
 
-st.write("")  # spacing
+st.write("")
 
+# -----------------------------
+# Safety / Red flags
+# -----------------------------
+with st.expander("⚠️ 안전 안내(레드 플래그 / 즉시 평가 권고)"):
+    st.markdown(
+        """
+- **외상 후 변형/탈구 의심**, 팔을 거의 못 움직일 정도의 급성 통증  
+- **휴식 시에도 지속되는 심한 통증**, **발열/오한**, 심한 전신 증상  
+- **팔/손의 진행성 근력저하**, 감각소실, 손이 심하게 차가워짐/색 변화  
+- **암 병력**, 원인 불명 체중 감소, 야간에 점점 심해지는 통증  
+위 항목이 있으면 자가검사보다 **대면 진료/영상 평가**를 우선하세요.
+"""
+    )
+
+# -----------------------------
+# Layout
+# -----------------------------
 left, right = st.columns([0.36, 0.64], gap="large")
 
 with left:
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>선택</div>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>1) 주요 증상 선택</div>", unsafe_allow_html=True)
 
-    mbti = st.selectbox("MBTI", MBTI_LIST, index=0)
+    symptom = st.selectbox("가장 주된 증상을 고르세요", list(SYMPTOMS.keys()))
+    st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='section-title'>2) 체크(선택)</div>", unsafe_allow_html=True)
+    trauma = st.checkbox("최근 외상(넘어짐/부딪힘/무거운 물건 들다 삐끗함)이 있었음")
+    fever = st.checkbox("발열/오한/전신 컨디션 저하가 동반됨")
+    neuro = st.checkbox("손 저림/감각저하/힘 빠짐이 진행 중")
 
     st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
-    st.markdown("<div class='note'>관심 분야(선택)를 체크하면 추천 직업이 조금 더 정교해집니다.</div>", unsafe_allow_html=True)
+    go = st.button("검사/운동 제시")
 
-    interests = st.multiselect(
-        "관심 분야",
-        ["IT/개발", "디자인/콘텐츠", "보건/의료", "마케팅/세일즈", "공공/정책", "경영/기획", "교육/상담", "기술/현장"],
-        default=[]
+    st.markdown(
+        "<div class='small'>※ 본 앱은 진단이 아닌 교육용 안내입니다. 실제 임상에서는 병력·ROM·촉진·신경학적 검사 및 필요 시 영상검사와 함께 판단합니다.</div>",
+        unsafe_allow_html=True
     )
-
-    count = st.slider("추천 직업 개수", min_value=3, max_value=10, value=6, step=1)
-
-    go = st.button("추천 보기")
     st.markdown("</div>", unsafe_allow_html=True)
 
 with right:
-    pack = MBTI_DATA[mbti]
+    cfg = SYMPTOMS[symptom]
 
-    # 간결 리포트
     st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>간단 리포트</div>", unsafe_allow_html=True)
-    st.write(f"**{mbti}** — {pack.summary}")
+    st.markdown("<div class='section-title'>요약</div>", unsafe_allow_html=True)
+    st.markdown(f"**선택 증상:** {symptom}")
+    st.markdown("**관련 키워드:**")
+    st.markdown(chips([f"🔹 {t}" for t in cfg["tags"]]), unsafe_allow_html=True)
 
+    # Quick safety messages based on checks
+    alerts = []
+    if trauma:
+        alerts.append("외상 후 증상이라면 골절/탈구/파열 평가가 필요할 수 있습니다.")
+    if fever:
+        alerts.append("발열/전신 증상 동반 시 감염성 원인 배제가 우선입니다.")
+    if neuro:
+        alerts.append("진행성 저림/근력저하는 신경학적 평가를 권고합니다.")
+    if alerts:
+        st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
+        st.warning(" ".join(alerts))
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    # Show tests & exercises when button clicked; otherwise still show concise preview
+    tests_to_show = cfg["tests"]
+    ex_to_show = cfg["exercises"]
+
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>3) 추천 이학적 검사</div>", unsafe_allow_html=True)
+
+    for key in tests_to_show:
+        t = TESTS[key]
+        with st.expander(f"🧪 {t.name} — {t.target}"):
+            st.markdown(f"**방법:** {wrap_md(t.how)}")
+            st.markdown(f"**양성 소견:** {wrap_md(t.positive)}")
+            if t.caution:
+                st.markdown(f"**주의:** {wrap_md(t.caution)}")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("<div class='card'>", unsafe_allow_html=True)
+    st.markdown("<div class='section-title'>4) 기본 운동(간단 그림)</div>", unsafe_allow_html=True)
+    st.markdown("<div class='note'>원칙: 통증 범위 내에서 시작하고, 다음 날 통증이 확 올라가면 강도/횟수를 줄이세요.</div>", unsafe_allow_html=True)
     st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
-    st.markdown("**핵심 강점**", help="MBTI는 참고 지표이며, 실제 진로는 흥미·역량·경험을 함께 고려하세요.")
-    st.markdown(chips([f"🔹 {s}" for s in pack.strengths]), unsafe_allow_html=True)
-    st.markdown("</div>", unsafe_allow_html=True)
 
-    # 추천 직업
-    recs = pick_recommendations(mbti, count, interests) if go else pack.careers[:min(6, len(pack.careers))]
+    for key in ex_to_show:
+        ex = EXERCISES[key]
+        cols = st.columns([0.55, 0.45], gap="medium")
+        with cols[0]:
+            st.markdown(f"**{ex.name}**")
+            st.markdown(f"- 목적: {ex.goal}")
+            st.markdown("- 방법:")
+            for s in ex.steps:
+                st.markdown(f"  - {s}")
+            st.markdown(f"- 권장: {ex.dosage}")
+            if ex.cautions:
+                st.markdown(f"- 주의: {ex.cautions}")
+        with cols[1]:
+            st.markdown(svg_card(ex.svg), unsafe_allow_html=True)
 
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>추천 직업</div>", unsafe_allow_html=True)
+        st.markdown("<div class='hr'></div>", unsafe_allow_html=True)
 
-    for i, job in enumerate(recs, start=1):
-        env = random.choice(pack.environments)
-        tip = random.choice(pack.study_tips)
-        st.markdown(
-            f"""
-<div style="padding:10px 12px; border: 1px solid rgba(11,99,246,0.12); border-radius: 12px; background: rgba(11,99,246,0.03); margin-bottom:10px;">
-  <div style="font-weight:900; color:#083A99;">{i}. {job}</div>
-  <div style="font-size:13px; color: rgba(11,27,58,0.82); margin-top:4px;">
-    • 환경: {env}<br/>
-    • 팁: {tip}
-  </div>
-</div>
-""",
-            unsafe_allow_html=True
-        )
-    st.markdown("</div>", unsafe_allow_html=True)
-
-    # 유명인
-    st.markdown("<div class='card'>", unsafe_allow_html=True)
-    st.markdown("<div class='section-title'>대표적으로 언급되는 유명인</div>", unsafe_allow_html=True)
-    st.markdown(chips([f"⭐ {p}" for p in pack.famous_people]), unsafe_allow_html=True)
-    st.markdown(
-        "<div class='note'>참고: 유명인 MBTI는 출처에 따라 달라질 수 있어, ‘대표적으로 언급되는 예시’로 제공됩니다.</div>",
-        unsafe_allow_html=True
-    )
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Footer
 st.write("")
 st.markdown(
-    "<div class='note' style='text-align:center;'>© MBTI Career Guide — Simple White & Blue UI</div>",
+    "<div class='note' style='text-align:center;'>© Shoulder Exam Helper — Educational Use Only</div>",
     unsafe_allow_html=True
 )
