@@ -331,7 +331,6 @@ st.markdown(
     """
 <div class="header">
   <h1>MBTI 진로 추천 🧭</h1>
-  <p>화이트·블루 톤의 심플한 진로 탐색 도구 (교육용 가이드)</p>
 </div>
 """,
     unsafe_allow_html=True
